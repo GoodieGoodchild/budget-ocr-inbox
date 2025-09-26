@@ -12,7 +12,7 @@ export default function App(){
     <div>
       <header className="bg-white border-b">
         <div className="container flex items-center justify-between py-3">
-          <div className="font-bold text-sky-700">Budget OCR Inbox</div>
+          <div className="font-bold text-sky-700">Meet Vera: your AI finance assistant.</div>
           <nav className="flex gap-2 text-sm">
             <NavItem to="/" label="Overview" />
             <NavItem to="/inbox" label="Inbox" />
