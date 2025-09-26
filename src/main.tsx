@@ -13,7 +13,16 @@ import Plan from './routes/Plan'
 import { registerSW } from './lib/pwa'
 
 registerSW();
-import('./lib/db').then(m => m.seed().then(() => m.ensureDefaultSettings()))
+// BEFORE:
+// import('./lib/db').then(m => m.seed().then(() => m.ensureDefaultSettings()))
+
+// AFTER: seed → ensure defaults → maybe run weekly review
+import('./lib/db')
+  .then(m => m.seed().then(() => m.ensureDefaultSettings()))
+  .then(() => import('./lib/reviews'))
+  .then(r => r.maybeRunWeeklyReview())
+  .catch(() => {})
+
 
 
 const router = createBrowserRouter([

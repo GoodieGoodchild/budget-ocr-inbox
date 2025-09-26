@@ -59,3 +59,34 @@ export async function draftWeeklyReview(weekStartISO: string): Promise<ReviewEnt
     metrics: { totalContrib: 0, goalsHit: 0, newClues: 0 },
   }
 }
+
+// Decide if a weekly review should be created for the current week.
+// Returns true if a new review was written, false otherwise.
+export async function maybeRunWeeklyReview(): Promise<boolean> {
+  const settings = await getSettings()
+  if (settings.reminderCadence !== 'weekly') return false
+
+  const now = new Date()
+  const { start, startISO } = getWeekRange(now, settings.reviewDay)
+
+  // Scheduled time this week = weekStart + reviewHour
+  const scheduled = new Date(start)
+  scheduled.setHours(settings.reviewHour ?? 19, 0, 0, 0)
+
+  // If it's not yet the scheduled time, do nothing.
+  if (now < scheduled) return false
+
+  // If we already created a review for this week, skip.
+  const existing = await db.reviews.where('weekStart').equals(startISO).first()
+  if (existing) return false
+
+  // Draft a placeholder (we'll flesh out the real generator later)
+  const draft = await draftWeeklyReview(startISO)
+  const id = await db.reviews.add(draft)
+
+  // Update settings.lastReviewAt for bookkeeping
+  await db.settings.put({ ...settings, lastReviewAt: new Date().toISOString() })
+
+  return !!id
+}
+
