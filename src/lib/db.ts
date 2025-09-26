@@ -1,6 +1,6 @@
 import Dexie, { Table } from 'dexie'
 
-export interface Account { id?: number; name: string; type: 'cheque'|'savings'|'cash'|'credit'|'loan'|'bond'; last4?: string; balance?: number }
+export interface Account { id?: number; name: string; type: 'cheque'|'savings'|'cash'|'credit'|'loan'|'bond'; last4?: string; balance?: number;   isClosed?: boolean; openedAt?: string; closedAt?: string; }
 export interface Debt { id?: number; name: string; balance: number; apr: number; minPayment: number; dueDay?: number; notes?: string; accountId?: number }
 export interface Category { id?: number; name: string; group?: string }
 export interface Goal { id?: number; name: string; target: number; saved: number }
