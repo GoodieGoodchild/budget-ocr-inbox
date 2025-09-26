@@ -2,6 +2,7 @@ import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import './styles/index.css'
+
 import App from './App'
 import Overview from './routes/Overview'
 import Inbox from './routes/Inbox'
@@ -10,20 +11,16 @@ import Accounts from './routes/Accounts'
 import Debts from './routes/Debts'
 import Goals from './routes/Goals'
 import Plan from './routes/Plan'
+import Reviews from './routes/reviews'
 import { registerSW } from './lib/pwa'
 
 registerSW();
-// BEFORE:
-// import('./lib/db').then(m => m.seed().then(() => m.ensureDefaultSettings()))
 
-// AFTER: seed → ensure defaults → maybe run weekly review
 import('./lib/db')
   .then(m => m.seed().then(() => m.ensureDefaultSettings()))
   .then(() => import('./lib/reviews'))
   .then(r => r.maybeRunWeeklyReview())
   .catch(() => {})
-
-
 
 const router = createBrowserRouter([
   {
@@ -37,6 +34,7 @@ const router = createBrowserRouter([
       { path: 'debts', element: <Debts /> },
       { path: 'goals', element: <Goals /> },
       { path: 'plan', element: <Plan /> },
+      { path: 'reviews', element: <Reviews /> },
     ]
   }
 ])
