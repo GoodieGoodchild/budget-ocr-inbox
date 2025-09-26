@@ -12,7 +12,9 @@ import Goals from './routes/Goals'
 import Plan from './routes/Plan'
 import { registerSW } from './lib/pwa'
 
-registerSW(); import('./lib/db').then(m=>m.seed())
+registerSW();
+import('./lib/db').then(m => m.seed().then(() => m.ensureDefaultSettings()))
+
 
 const router = createBrowserRouter([
   {

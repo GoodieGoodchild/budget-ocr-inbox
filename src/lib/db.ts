@@ -66,6 +66,22 @@ class AppDB extends Dexie {
 
 export const db = new AppDB()
 
+// NEW: ensure there is a default settings row (weekly, Sun 19:00)
+export async function ensureDefaultSettings() {
+  const existing = await db.settings.get(1)
+  if (!existing) {
+    await db.settings.put({
+      id: 1,
+      reminderCadence: 'weekly',
+      reviewDay: 0,            // 0 = Sunday
+      reviewHour: 19,          // 19:00
+      quietHours: { start: '21:00', end: '07:00' },
+      lastReviewAt: undefined,
+    })
+  }
+}
+
+
 // Seed defaults once
 export async function seed(){
   const count = await db.accounts.count()
