@@ -9,6 +9,31 @@ export interface Transaction { id?: number; date: string; amount: number; type: 
 export interface BalanceCheckpoint { id?: number; accountId: number; date: string; balance: number }
 export interface InboxItem { id?: number; createdAt: string; source: 'text'|'image'; rawText?: string; imageBlob?: Blob; ocrText?: string; status: 'new'|'reviewed'|'saved'; confidence?: number; parsed?: ParsedDraft }
 export interface ParsedDraft { amount?: number; date?: string; merchant?: string; type?: TxType; accountId?: number; categoryId?: number; balanceCheckpoint?: number; bank?: string }
+// NEW types (db.ts)
+export interface ReviewEntry {
+  id?: number
+  weekStart: string   // ISO Monday (or user setting)
+  createdAt: string
+  title: string       // e.g., "Weekly Review · 2025-09-22 → 2025-09-28"
+  summary: string     // assistant paragraph
+  metrics: {
+    totalContrib: number
+    goalsHit: number
+    newClues: number
+    biggestWinGoalId?: number
+  }
+}
+
+export interface AppSettings {
+  id?: number
+  reminderCadence: 'off'|'weekly'|'daily'   // keep 'daily' for future
+  reviewDay: number     // 0=Sun..6=Sat
+  reviewHour: number    // 0-23
+  lastReviewAt?: string
+  quietHours?: { start: string, end: string } // "21:00", "07:00"
+}
+
+
 
 class AppDB extends Dexie {
   accounts!: Table<Account, number>
@@ -18,6 +43,8 @@ class AppDB extends Dexie {
   transactions!: Table<Transaction, number>
   balanceCheckpoints!: Table<BalanceCheckpoint, number>
   inbox!: Table<InboxItem, number>
+  reviews!: Table<ReviewEntry, number>   // NEW
+  settings!: Table<AppSettings, number>  // NEW
 
   constructor(){
     super('budget-db')
@@ -29,6 +56,10 @@ class AppDB extends Dexie {
       transactions: '++id, date, type, accountId, debtId, categoryId',
       balanceCheckpoints: '++id, accountId, date',
       inbox: '++id, createdAt, status'
+    })
+    this.version(2).stores({
+      reviews: '++id, weekStart',  // index by weekStart for quick lookup
+      settings: 'id'               // single-row table (id=1)
     })
   }
 }
