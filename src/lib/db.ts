@@ -33,6 +33,40 @@ export interface AppSettings {
   quietHours?: { start: string, end: string } // "21:00", "07:00"
 }
 
+// NEW: Financial goal
+export type GoalCategory = 'Savings' | 'Debt' | 'Investment'
+
+export interface Goal {
+  id?: number
+  name: string
+  target: number         // ZAR target to reach (or debt to clear)
+  current: number        // current saved/paid amount (we'll keep it simple at first)
+  category: GoalCategory
+  deadline?: string      // ISO date (optional)
+  color?: string         // optional UI color
+  createdAt: string
+  updatedAt: string
+}
+
+// NEW: Goal clues (milestone nudges)
+export interface GoalClue {
+  id?: number
+  goalId: number
+  text: string
+  unlockAtPct: number    // e.g., 10, 25, 50, 75, 100
+  notify: boolean
+  unlockedAt?: string    // when it unlocked (set by logic)
+}
+
+// NEW: weekly snapshot of goal progress (to detect "crossed a milestone this week")
+export interface GoalSnapshot {
+  id?: number
+  goalId: number
+  weekStart: string      // ISO YYYY-MM-DD (same anchor as reviews.weekStart)
+  pct: number            // progress percentage at snapshot time (0..100)
+  current: number        // current amount at snapshot time
+  createdAt: string
+}
 
 
 class AppDB extends Dexie {
@@ -60,6 +94,12 @@ class AppDB extends Dexie {
     this.version(2).stores({
       reviews: '++id, weekStart',  // index by weekStart for quick lookup
       settings: 'id'               // single-row table (id=1)
+    })
+    // NEW: goals, clues, and progress snapshots
+    this.version(3).stores({
+      goals: '++id, name, category',
+      goalClues: '++id, goalId, unlockAtPct',
+      goalSnapshots: '++id, goalId, weekStart'
     })
   }
 }
