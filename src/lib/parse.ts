@@ -10,7 +10,7 @@ export type Parsed = {
 
 const num = (s:string)=>  parseFloat(s.replace(/[ \u00A0,]/g, '').replace(',', '.')); // strip spaces/commas, normalize comma decimal
 //const AMOUNT = /(?:R|ZAR)\s?([0-9]{1,3}(?:[ ,][0-9]{3})*(?:\.[0-9]{2})?)/i
-const AMOUNT = /(?:R|ZAR)\s*((?:\d{1,3}(?:[ ,]\d{3})+|\d+)(?:\s*[.,]\s*\d{2})?)/i;
+const AMOUNT_G = /\b(?:R|ZAR)\s*([0-9]{1,3}(?:[ ,]\d{3})*|\d+)(?:[.,]\d{2})?\b/gi
           // either grouped thousands or any length of digits
                    // optional decimal with comma or dot, allow stray spaces from OCR
 
@@ -22,14 +22,26 @@ const INCOME_HINT = /(salary|credit from|eft from|paid by|deposit)/i
 const EXPENSE_HINT = /(pos|purchase|card|debit|fee|deducted|payment at)/i
 const TRANSFER_HINT = /(eft to|transfer to|internal transfer)/i
 const DEBT_HINT = /(credit card|min(imum)? payment|installment|instalment)/i
+const MONTH_ABBR = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12 } as const
+const D_MON = /\b(\d{1,2})\s*([A-Za-z]{3})(?:[^\d]|$)/
 
-function clean(s: string) {
-  return s.replace(/\s+/g, ' ').trim()
+
+function clean(s: string) { return s.replace(/\s+/g, ' ').trim() }
+
+// Normalize things like "18Sep" → "YYYY-09-18" (assume current year if missing)
+export function normalizeDayMon(raw: string) {
+  const m = raw.match(D_MON)
+  if (!m) return ''
+  const d = String(m[1]).padStart(2,'0')
+  const mon3 = m[2].toLowerCase() as keyof typeof MONTH_ABBR
+  const mon = MONTH_ABBR[mon3]; if (!mon) return ''
+  const y = String(new Date().getFullYear())
+  return `${y}-${String(mon).padStart(2,'0')}-${d}`
 }
 
 export function parseText(text:string): Parsed {
   const p: Parsed = {}
-  const amt = text.match(AMOUNT); if(amt) p.amount = num(amt[1])
+  const amt = text.match(AMOUNT_G); if(amt) p.amount = num(amt[1])
   const bal = text.match(BAL); if(bal) p.balance = num(bal[2])
   const dt = text.match(DATE); if(dt) p.date = normalizeDate(dt[1])
   const l4 = text.match(LAST4); if(l4) p.last4 = l4[1]
@@ -50,48 +62,55 @@ export function parseText(text:string): Parsed {
   return p
 }
 
+// NEW robust multi parser: scans the whole blob for every amount,
+// builds a small text window around each hit, and reuses parseText on that window.
 export function parseMany(text: string): ReturnType<typeof parseText>[] {
-  const lines = text.split(/\r?\n/).map(l => clean(l)).filter(Boolean)
   const out: ReturnType<typeof parseText>[] = []
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
-    if (!HAS_AMOUNT.test(line)) continue
+  // 1) Global scan for every amount occurrence
+  let m: RegExpExecArray | null
+  while ((m = AMOUNT_G.exec(text)) !== null) {
+    // Take ~120 chars before & after the amount as context
+    const start = Math.max(0, m.index - 120)
+    const end   = Math.min(text.length, AMOUNT_G.lastIndex + 120)
+    const ctx   = clean(text.slice(start, end))
 
-    // context = this line plus a neighbor above and below
-    const ctx = clean([lines[i-1], line, lines[i+1]].filter(Boolean).join(' · '))
+    // 2) Parse that window with your single-record parser
+    const p = parseText(ctx)
 
-    const parsed = parseText(ctx)
-
-    // if parseText didn’t find a date, peek at neighbor lines
-    if (!parsed.date) {
-      const prev = lines[i-1] || ''
-      const next = lines[i+1] || ''
-      const match = (prev.match(DATE) || next.match(DATE))?.[0]
-      if (match) parsed.date = match // keep it raw or normalize if you already do
+    // 3) If date missing, try to pull a "18Sep" style date from the same window
+    if (!p.date) {
+      const dmon = ctx.match(D_MON)
+      if (dmon) p.date = normalizeDayMon(dmon[0])
     }
 
-    // if last4 missing, peek at neighbors
-    if (!parsed.last4) {
-      const prev2 = lines[i-2] || ''
-      const l4m = (prev2.match(LAST4) || (lines[i-1] || '').match(LAST4) || line.match(LAST4))
-      if (l4m) parsed.last4 = l4m[1]
-    }
+    // 4) Only keep if we got an amount
+    if (p.amount != null) out.push(p)
+  }
 
-    if (parsed.amount != null) {
-      out.push(parsed)
+  // Fallback: if we somehow saw only one, try splitting on common SMS headers
+  if (out.length <= 1) {
+    const chunks = text.split(/(?=FNB\s*:\-\)|Nedbank|Standard Bank|Capitec|ABSA)/i).map(clean).filter(Boolean)
+    for (const c of chunks) {
+      const p = parseText(c)
+      if (!p.date) {
+        const dmon = c.match(D_MON)
+        if (dmon) p.date = normalizeDayMon(dmon[0])
+      }
+      if (p.amount != null) out.push(p)
     }
   }
 
-  // de-duplicate by date+amount+merchant
+  // De-dupe by (date|amount|merchant)
   const seen = new Set<string>()
   return out.filter(p => {
-    const key = [p.date, p.amount, p.merchant].join('|').toLowerCase()
+    const key = [p.date || '', p.amount ?? '', (p.merchant || '').toLowerCase()].join('|')
     if (seen.has(key)) return false
     seen.add(key)
     return true
   })
 }
+
 
 
 // NEW: normalize things like "••1234", "xxxx 1234", "*1234" -> "1234"
