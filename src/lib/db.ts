@@ -68,6 +68,15 @@ export interface GoalSnapshot {
   createdAt: string
 }
 
+// Add this interface near the others
+export interface LogEntry {
+  id?: number
+  ts: string
+  level: 'debug' | 'info' | 'warn' | 'error'
+  message: string
+  meta?: any
+}
+
 
 class AppDB extends Dexie {
   accounts!: Table<Account, number>
@@ -79,6 +88,7 @@ class AppDB extends Dexie {
   inbox!: Table<InboxItem, number>
   reviews!: Table<ReviewEntry, number>   // NEW
   settings!: Table<AppSettings, number>  // NEW
+  logs!: Table<LogEntry, number>
 
   constructor(){
     super('budget-db')
@@ -101,6 +111,10 @@ class AppDB extends Dexie {
       goalClues: '++id, goalId, unlockAtPct',
       goalSnapshots: '++id, goalId, weekStart'
     })
+  
+  this.version(4).stores({
+  logs: '++id, ts, level'
+})
   }
 }
 

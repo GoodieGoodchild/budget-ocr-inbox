@@ -4,9 +4,8 @@ import { ocrImage } from '../lib/ocr'
 import { parseText ,parseMany, normalizeLast4, type Parsed } from '../lib/parse'
 import { db, InboxItem, Transaction, BalanceCheckpoint, Account } from '../lib/db'
 import { fmtMoney, todayISO } from '../lib/format'
-
-
 import { toCSV, downloadCSV } from '../lib/csv'
+import MultiPreview, { ParsedLite } from '../components/MultiPreview'
 
 
 export default function Inbox(){
@@ -14,6 +13,7 @@ export default function Inbox(){
   const [busy,setBusy]=useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const [accounts,setAccounts] = React.useState<Account[]>([])
+  const [previewRows, setPreviewRows] = useState<ParsedLite[] | null>(null)
 
 
   
@@ -78,29 +78,19 @@ export default function Inbox(){
           }
         }
 
-  const rows = multi.map((p: Parsed) => ({
-          date: p.date || '',
-          amount: p.amount ?? '',
-          type: p.type || '',
-          merchant: p.merchant || '',
-          last4: normalizeLast4(p.last4 || ''),
-          bank: p.bank || '',
-        }))
-        const csv = toCSV(rows, ['date','amount','type','merchant','last4','bank'])
+  // Show the multi-transaction preview table instead of immediate CSV confirm
+setPreviewRows(multi.map(p => ({
+  date: p.date,
+  amount: p.amount,
+  type: p.type as any,
+  merchant: p.merchant,
+  last4: p.last4,
+  bank: p.bank,
+})))
 
-        if (confirm(`Detected ${multi.length} transactions. Export CSV now?`)) {
-          downloadCSV(`vera-parsed-${Date.now()}.csv`, csv)
-        }
+// (optional) stop further processing of this file now
+// return
 
-        // OPTIONAL but useful: drop a card so OCR text is visible in the inbox
-        setItems(s => [{
-          createdAt: new Date().toISOString(),
-          source: 'image',
-          ocrText: text,
-          status: 'new',
-          parsed: {},
-          confidence: 0.5
-        }, ...s])
 
       } else {
         // single-item flow…
@@ -155,6 +145,14 @@ export default function Inbox(){
       <DropImage onFiles={onFiles}/>
 
       {busy && <div className="text-slate-600">Running OCR…</div>}
+
+      {previewRows && (
+        <MultiPreview
+          rows={previewRows}
+          accounts={accounts}
+          onDone={() => setPreviewRows(null)}
+        />
+      )}
 
       <div className="grid gap-3">
         {items.map((it,idx)=>{

@@ -13,19 +13,17 @@ import Goals from './routes/Goals'
 import Plan from './routes/Plan'
 import Reviews from './routes/Reviews'
 import { registerSW } from './lib/pwa'
+import ErrorBoundary from './components/ErrorBoundary'
+import { installGlobalErrorHandlers, log } from './lib/logger'
+import Logs from './routes/Logs'
 
-registerSW();
-
-import('./lib/db')
-  .then(m => m.seed().then(() => m.ensureDefaultSettings()))
-  .then(() => import('./lib/reviews'))
-  .then(r => r.maybeRunWeeklyReview())
-  .catch(() => {})
+installGlobalErrorHandlers()
+log.info('App booting…')
 
 const router = createBrowserRouter([
   {
     path: '/',
-    element: <App />,
+    element: <App />, 
     children: [
       { index: true, element: <Overview /> },
       { path: 'inbox', element: <Inbox /> },
@@ -35,12 +33,22 @@ const router = createBrowserRouter([
       { path: 'goals', element: <Goals /> },
       { path: 'plan', element: <Plan /> },
       { path: 'reviews', element: <Reviews /> },
+      { path: 'logs', element: <Logs /> },
     ]
   }
 ])
 
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <RouterProvider router={router} />
+    <ErrorBoundary>
+      <RouterProvider router={router} />
+    </ErrorBoundary>
   </React.StrictMode>
 )
+registerSW();
+
+import('./lib/db')
+  .then(m => m.seed().then(() => m.ensureDefaultSettings()))
+  .then(() => import('./lib/reviews'))
+  .then(r => r.maybeRunWeeklyReview())
+  .catch(() => {})
