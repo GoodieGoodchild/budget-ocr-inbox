@@ -1,9 +1,13 @@
 import React, { useRef, useState } from 'react'
 import DropImage from '../components/DropImage'
 import { ocrImage } from '../lib/ocr'
-import { parseText } from '../lib/parse'
+import { parseText ,parseMany, normalizeLast4, type Parsed } from '../lib/parse'
 import { db, InboxItem, Transaction, BalanceCheckpoint, Account } from '../lib/db'
 import { fmtMoney, todayISO } from '../lib/format'
+
+
+import { toCSV, downloadCSV } from '../lib/csv'
+
 
 export default function Inbox(){
   const [items,setItems]=useState<InboxItem[]>([])
@@ -11,6 +15,8 @@ export default function Inbox(){
   const fileRef = useRef<HTMLInputElement>(null)
   const [accounts,setAccounts] = React.useState<Account[]>([])
 
+
+  
   React.useEffect(()=>{ db.accounts.toArray().then(setAccounts)},[])
 
   async function addText(){
@@ -21,19 +27,99 @@ export default function Inbox(){
     setItems(s => [item, ...s])
   }
 
-  async function onFiles(files: File[]){
-    setBusy(true)
-    try {
-      for(const f of files){
-        const text = await ocrImage(f)
-        const parsed = parseText(text)
-        const item: InboxItem = { createdAt: new Date().toISOString(), source:'image', ocrText:text, status:'new', parsed, confidence: 0.5 }
-        setItems(s=>[item, ...s])
+  async function onFiles(files: File[]) {
+  setBusy(true);                    // NEW: show "Running OCR…" while processing
+  try {
+    for (const f of files) {
+      const text = await ocrImage(f)
+      const multi = parseMany(text)
+
+      if (multi.length > 1) {
+        // --- your multi-parse block (unchanged) ---
+        const last4s = Array.from(new Set(multi.map(p => normalizeLast4(p.last4 || '')).filter(Boolean)))
+
+        const existingByLast4 = new Map<string, boolean>()
+        for (const l4 of last4s) {
+          const hit = await db.accounts.where('last4').equals(l4).first()
+          existingByLast4.set(l4, !!hit)
+        }
+
+        const missing = last4s.filter(l4 => !existingByLast4.get(l4))
+
+        if (missing.length) {
+          const proceed = confirm(
+            `I found ${missing.length} card(s) not in your Accounts: ${missing.map(l=>`•${l}`).join(', ')}.\n` +
+            `Do you want to add them now so future imports auto-map?`
+          )
+          if (proceed) {
+            for (const l4 of missing) {
+              const lower = text.toLowerCase()
+              let bankGuess = ''
+              if (lower.includes('nedbank')) bankGuess = 'Nedbank'
+              else if (lower.includes('fnb')) bankGuess = 'FNB'
+              else if (lower.includes('standard bank')) bankGuess = 'Standard Bank'
+              else if (lower.includes('capitec')) bankGuess = 'Capitec'
+              else if (lower.includes('absa')) bankGuess = 'ABSA'
+
+              const defaultName = bankGuess ? `${bankGuess} •${l4}` : `Card •${l4}`
+              const name = prompt(`Account name for •${l4}?`, defaultName) || defaultName
+              const type = (prompt(
+                `Type for ${name}? (cheque/savings/cash/credit/loan/bond)`,
+                'credit'
+              ) as any) || 'credit'
+
+              await db.accounts.add({
+                name,
+                type,
+                last4: l4,
+                openedAt: new Date().toISOString()
+              })
+            }
+          }
+        }
+
+  const rows = multi.map((p: Parsed) => ({
+          date: p.date || '',
+          amount: p.amount ?? '',
+          type: p.type || '',
+          merchant: p.merchant || '',
+          last4: normalizeLast4(p.last4 || ''),
+          bank: p.bank || '',
+        }))
+        const csv = toCSV(rows, ['date','amount','type','merchant','last4','bank'])
+
+        if (confirm(`Detected ${multi.length} transactions. Export CSV now?`)) {
+          downloadCSV(`vera-parsed-${Date.now()}.csv`, csv)
+        }
+
+        // OPTIONAL but useful: drop a card so OCR text is visible in the inbox
+        setItems(s => [{
+          createdAt: new Date().toISOString(),
+          source: 'image',
+          ocrText: text,
+          status: 'new',
+          parsed: {},
+          confidence: 0.5
+        }, ...s])
+
+      } else {
+        // single-item flow…
+        const parsed = multi[0] || parseText(text)
+        const item: InboxItem = {
+          createdAt: new Date().toISOString(),
+          source: 'image',
+          ocrText: text,
+          status: 'new',
+          parsed,
+          confidence: 0.5,
+        }
+        setItems(s => [item, ...s])
       }
-    } finally {
-      setBusy(false)
     }
+  } finally {
+    setBusy(false);                 // NEW: always hide spinner, even on error
   }
+}
 
   async function accept(item: InboxItem, idx:number){
     // create transaction & optional balance checkpoint

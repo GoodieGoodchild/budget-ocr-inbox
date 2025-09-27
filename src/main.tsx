@@ -11,7 +11,7 @@ import Accounts from './routes/Accounts'
 import Debts from './routes/Debts'
 import Goals from './routes/Goals'
 import Plan from './routes/Plan'
-import Reviews from './routes/reviews'
+import Reviews from './routes/Reviews'
 import { registerSW } from './lib/pwa'
 
 registerSW();

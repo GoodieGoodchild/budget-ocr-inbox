@@ -17,11 +17,15 @@ const AMOUNT = /(?:R|ZAR)\s*((?:\d{1,3}(?:[ ,]\d{3})+|\d+)(?:\s*[.,]\s*\d{2})?)/
 const BAL = /(avail(?:able)?\s*bal(?:ance)?|balance|bal)\W*(?:R|ZAR)?\s?([0-9]{1,3}(?:[ ,][0-9]{3})*(?:\.[0-9]{2})?)/i
 const DATE = /(\d{4}-\d{2}-\d{2}|\d{2}[\/-]\d{2}[\/-]\d{4}|\d{1,2}\s\w{3}\s\d{4})/
 const LAST4 = /(?:\*{2,}|xxxx|x{4,}|acct\s*\*?)\s*(\d{3,4})/i
-
+const HAS_AMOUNT = /(?:R|ZAR)\s*(\d{1,3}(?:[ ,]\d{3})*|\d+)(?:[.,]\d{2})?/i
 const INCOME_HINT = /(salary|credit from|eft from|paid by|deposit)/i
 const EXPENSE_HINT = /(pos|purchase|card|debit|fee|deducted|payment at)/i
 const TRANSFER_HINT = /(eft to|transfer to|internal transfer)/i
 const DEBT_HINT = /(credit card|min(imum)? payment|installment|instalment)/i
+
+function clean(s: string) {
+  return s.replace(/\s+/g, ' ').trim()
+}
 
 export function parseText(text:string): Parsed {
   const p: Parsed = {}
@@ -46,6 +50,58 @@ export function parseText(text:string): Parsed {
   return p
 }
 
+export function parseMany(text: string): ReturnType<typeof parseText>[] {
+  const lines = text.split(/\r?\n/).map(l => clean(l)).filter(Boolean)
+  const out: ReturnType<typeof parseText>[] = []
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    if (!HAS_AMOUNT.test(line)) continue
+
+    // context = this line plus a neighbor above and below
+    const ctx = clean([lines[i-1], line, lines[i+1]].filter(Boolean).join(' · '))
+
+    const parsed = parseText(ctx)
+
+    // if parseText didn’t find a date, peek at neighbor lines
+    if (!parsed.date) {
+      const prev = lines[i-1] || ''
+      const next = lines[i+1] || ''
+      const match = (prev.match(DATE) || next.match(DATE))?.[0]
+      if (match) parsed.date = match // keep it raw or normalize if you already do
+    }
+
+    // if last4 missing, peek at neighbors
+    if (!parsed.last4) {
+      const prev2 = lines[i-2] || ''
+      const l4m = (prev2.match(LAST4) || (lines[i-1] || '').match(LAST4) || line.match(LAST4))
+      if (l4m) parsed.last4 = l4m[1]
+    }
+
+    if (parsed.amount != null) {
+      out.push(parsed)
+    }
+  }
+
+  // de-duplicate by date+amount+merchant
+  const seen = new Set<string>()
+  return out.filter(p => {
+    const key = [p.date, p.amount, p.merchant].join('|').toLowerCase()
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+
+// NEW: normalize things like "••1234", "xxxx 1234", "*1234" -> "1234"
+export function normalizeLast4(s?: string | null) {
+  if (!s) return ''
+  const digits = (s.match(/\d{4}/g) || []).pop() // take the last 4-digit group if multiple
+  return digits || ''
+}
+
+
 function normalizeDate(raw:string){
   if(/\d{4}-\d{2}-\d{2}/.test(raw)) return raw
   if(/\d{2}[\/]-?\d{2}[\/]-?\d{4}/.test(raw)){
@@ -61,3 +117,4 @@ function normalizeDate(raw:string){
   const y = parts[2]
   return `${y}-${m}-${d}`
 }
+
